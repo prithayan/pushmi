@@ -27,8 +27,9 @@ PUSHMI_INLINE_VAR constexpr struct for_each_fn {
   struct fn {
     Function f_;
     template <class Cursor>
-    void operator()(detail::any, Cursor cursor) const {
-      f_(*cursor);
+    void operator()(detail::any, Cursor cursor, unsigned index) const {
+      //std::cout<<"\n line 31::"<<" *= "<<*cursor;
+      f_(*cursor, index);
     }
   };
   struct identity {
