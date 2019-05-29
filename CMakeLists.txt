@@ -7,8 +7,8 @@ cmake_minimum_required(VERSION 3.7)
 
 project(pushmi-project CXX)
 
-option(PUSHMI_USE_CONCEPTS_EMULATION "Use C++14 Concepts Emulation" ON)
-option(PUSHMI_USE_CPP_2A "Use C++2a with concepts emulation" OFF)
+option(PUSHMI_USE_CONCEPTS_EMULATION "Use C++14 Concepts Emulation" OFF)
+option(PUSHMI_USE_CPP_2A "Use C++2a with concepts emulation" ON)
 option(PUSHMI_USE_CPP_17 "Use C++17 with concepts emulation" OFF)
 option(PUSHMI_ONE_TEST_BINARY "Compile all the tests into one binary" OFF)
 
