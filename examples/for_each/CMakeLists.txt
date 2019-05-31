@@ -17,3 +17,9 @@ target_link_libraries(for_each_4
   pushmi
   examples
   Threads::Threads)
+
+add_executable(for_each_5 for_each_5.cpp)
+target_link_libraries(for_each_5
+  pushmi
+  examples
+  Threads::Threads)
