@@ -17,11 +17,13 @@
 #include <cassert>
 #include <iostream>
 #include <vector>
+#include <chrono>
 
 #include "../for_each.h"
 #include "../pool.h"
 
 using namespace pushmi::aliases;
+using namespace std::chrono; 
 
 template <class Executor, class Allocator = std::allocator<char>>
 auto naive_executor_bulk_target(Executor e, Allocator a = Allocator{}) {
@@ -82,9 +84,10 @@ auto naive_executor_bulk_target(Executor e, Allocator a = Allocator{}) {
             }
           }
         };
-        for (decltype(sb) idx{sb}; idx != se; ++idx) {
+         unsigned index=0;
+        for (decltype(sb) idx{sb}; idx != se; ++idx, index++) {
           ++std::get<5>(*shared_state);
-          e.schedule() | op::submit([shared_state, idx, stepDone](auto ex) {
+          e.schedule() | op::submit([shared_state, idx, stepDone, index](auto ex) {
             try {
               // this indicates to me that bulk is not the right abstraction
               auto old = std::get<4>(*shared_state).load();
@@ -92,7 +95,8 @@ auto naive_executor_bulk_target(Executor e, Allocator a = Allocator{}) {
               do {
                 step = old;
                 // func(accumulation, idx)
-                std::get<3> (*shared_state)(step, idx);
+                //std::cout<<"\n line 95:";
+                std::get<3> (*shared_state)(step, idx, index);
               } while (!std::get<4>(*shared_state)
                             .compare_exchange_strong(old, step));
             } catch (...) {
@@ -115,22 +119,93 @@ auto naive_executor_bulk_target(Executor e, Allocator a = Allocator{}) {
   };
 }
 
+#define MAXDIM 1024
+#define index2Row(index) ((index)/MAXDIM )
+#define index2Col(index) ((index)%MAXDIM )
+
 int main() {
   mi::pool p{std::max(1u, std::thread::hardware_concurrency())};
+  //mi::pool p{std::max(1u, 1u)};//std::thread::hardware_concurrency())};
 
-  std::vector<int> vec(10);
+  std::cout<<"\n num of threads:"<<std::thread::hardware_concurrency();
+  const unsigned numRows = MAXDIM, numCols = MAXDIM;
+  std::vector<float> C(numRows*numCols, 0);
+  std::vector<float> referenceC(numRows*numCols, 0);
+  std::vector<float> A(numRows*numCols);
+  std::vector<float> B(numRows*numCols);
+
+  auto f = []()-> float{return rand() % 10000; };
+  generate(A.begin(), A.end(), f);
+  generate(B.begin(), B.end(), f);
+  //for (unsigned i = 0 ; i < numRows*numCols; i++ ){
+  //  C[i] = 0;
+  //  referenceC[i] = 0;
+  //  A[i] =1;// index2Row(i)+i;
+  //  B[i] =i;// index2Col(i)*i;
+  //}
+    auto start = high_resolution_clock::now(); 
 
   mi::for_each(
       naive_executor_bulk_target(p.executor()),
-      vec.begin(),
-      vec.end(),
-      [](int& x) { x = 42; });
+      C.begin(),
+      C.end(),
+      [&A, &B](float& x, unsigned index) 
+      {
+        for (unsigned k = 0 ; k < numRows; k++ ){
+          //C[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+          unsigned row = index2Row(index);
+          unsigned col = index2Col(index);
+          x+= A[row*numCols + k]*B[k*numCols+col];
+          //std::cout<<" "<<row<<","<<col<<", A="<<A[row*numCols + k]
+          //  <<", B="<<B[k*numCols+col]<<", x="<<x;
+        }
+        //std::cout<<"\n";
+        //std::cout<<"\t C["<<index2Row(index)<<"]["<<index2Col(index)<<"]="<<x ; 
+      });
+   auto stop = high_resolution_clock::now(); 
+   auto duration = duration_cast<microseconds>(stop - start); 
+   std::cout << "Time taken by function: "
+                << (duration.count())/1000000 << " microseconds \n"; 
 
-  assert(
-      std::count(vec.begin(), vec.end(), 42) == static_cast<int>(vec.size()));
+    auto baseStart = high_resolution_clock::now(); 
+  for (unsigned i = 0 ; i < numRows; i++ ){
+    for (unsigned j = 0 ; j < numRows; j++ ){
+      for (unsigned k = 0 ; k < numRows; k++ ){
+        referenceC[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+      }
+     // if (referenceC[i*numCols+j] != C[i*numCols+j]){
+     //   std::cout<<"\n Difference :"<<i<<","<<j<<"="<<referenceC[i*numCols+j];
+     //   goto outofLoop1;
+     // }
+    }
+  }
+   auto baseStop = high_resolution_clock::now(); 
+   auto baseDuration = duration_cast<microseconds>(baseStop - baseStart); 
+   std::cout << "Time taken by function: "
+                << baseDuration.count()/1000000 << " microseconds \n"; 
+  outofLoop1:
 
-  std::cout << "OK" << std::endl;
 
   p.stop();
   p.wait();
+  //for (unsigned i = 0 ; i < numRows; i++ ){
+  //  for (unsigned j = 0 ; j < numRows; j++ ){
+  //    for (unsigned k = 0 ; k < numRows; k++ ){
+  //      referenceC[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+  //    }
+  //    if (referenceC[i*numCols+j] != C[i*numCols+j]){
+  //      std::cout<<"\n Again Difference :"<<i<<","<<j<<"="<<referenceC[i*numCols+j];
+  //      goto outofLoop2;
+  //    }
+  //  }
+  //}
+  outofLoop2:
+  std::cout<<"\n=================\n";
+  //for (unsigned i = 0 ; i < numRows; i++ ){
+  //  for (unsigned j = 0 ; j < numCols; j++ ){
+  //    std::cout<<"  "<<C[i*numCols+j];
+  //  }
+  //  std::cout<<"\n";
+  //}
+  std::cout << "\n OK" << std::endl;
 }

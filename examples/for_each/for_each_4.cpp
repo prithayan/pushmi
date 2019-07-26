@@ -147,6 +147,7 @@ auto naive_executor_bulk_target(Executor e, Allocator a = Allocator{}) {
 
 //#define MAXDIM 1024
 unsigned MAXDIM = 1024;
+unsigned maxNumExps = 2;
 #define index2Row(index) ((index)/MAXDIM )
 #define index2Col(index) ((index)%MAXDIM )
 
@@ -160,13 +161,16 @@ int main(int argc, char **argv) {
     bool mismatch = false;
   std::cout<<"\n num of threads:"<<std::thread::hardware_concurrency();
   unsigned numRows = MAXDIM, numCols = MAXDIM;
-  std::vector<float> C(numRows*numCols, 0);
+  std::vector<float> C1(numRows*numCols, 0);
+  std::vector<float> C2(numRows*numCols, 0);
+  std::vector<std::vector<float>> C2d(numRows);
+  std::vector<std::vector<float>> C2d2(numRows);
   std::vector<float> referenceC(numRows*numCols, 0);
   std::vector<float> A(numRows*numCols);
   std::vector<float> B(numRows*numCols);
 
-  double executor1TimeSum = 0, executor2TimeSum = 0, baseTimeSum =0 ;
-  for (unsigned numExperiments = 0 ; numExperiments < 10 ; numExperiments++) {
+  double executor1TimeSum = 0, executor2TimeSum = 0,executor3TimeSum = 0,executor4TimeSum = 0, baseTimeSum =0 ;
+  for (unsigned numExperiments = 0 ; numExperiments < maxNumExps ; numExperiments++) {
 
     mi::pool p{std::max(1u, std::thread::hardware_concurrency())};
     auto f = []()-> float{return rand() % 10000; };
@@ -174,22 +178,105 @@ int main(int argc, char **argv) {
     generate(B.begin(), B.end(), f);
     std::fill(referenceC.begin(), referenceC.end(), 0);
     {
-      std::fill(C.begin(), C.end(), 0);
+      //std::array<std::array<float, numCols>, numRows> C;
+        for (unsigned i =0 ; i < numCols; i++) {
+          C2d[i].resize(numCols);
+          for (unsigned j =0 ; j < numCols; j++)
+            C2d[i][j] = 0 ;
+      }
+
+      //for (auto CCols: referenceC)
+      //  for (unsigned i =0 ; i < numCols; i++)
+      //    CCols[i] = 0 ;
+      auto start = high_resolution_clock::now(); 
+
+      mi::for_each(
+          inline_bulk_target(), C2d.begin(),
+          C2d.end(),
+          [&A, &B, numRows, numCols](std::vector<float> &x, unsigned index) 
+          {
+              //std::cout<<" size of x = "<<x.size()<<"\n" ; 
+            for (unsigned j = 0 ; j < numRows; j++ ){
+                unsigned col = j;
+              float reductionSum = 0;
+              for (unsigned k = 0 ; k < numRows; k++ ){
+                //C[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+                //unsigned row = index2Row(index);
+                //unsigned col = index2Col(index);
+                unsigned row = index;
+                reductionSum += A[row*numCols + k]*B[k*numCols+col];
+                //std::cout<<" "<<row<<","<<col;//<<", A="<<A[row*numCols + k]
+                  //<<", B="<<B[k*numCols+col]<<", x="<<reductionSum;
+              }
+              x[col] = reductionSum;
+            }
+          //std::cout<<"\n";
+          //std::cout<<"\t C["<<index2Row(index)<<"]["<<index2Col(index)<<"]="<<x ; 
+          });
+      auto stop = high_resolution_clock::now(); 
+      auto duration = duration_cast<microseconds>(stop - start); 
+      double microTime =(double) duration.count()/1000000;
+      executor3TimeSum += microTime;
+      std::cout<<std::fixed;
+      std::cout << "\n Time taken by Executor3 function: "
+        << microTime << " seconds \n"; 
+    }
+    {
+        for (unsigned i =0 ; i < numCols; i++) {
+          C2d2[i].resize(numCols);
+          for (unsigned j =0 ; j < numCols; j++)
+            C2d2[i][j] = 0 ;
+      }
+      auto start = high_resolution_clock::now(); 
+      mi::for_each(
+          naive_executor_bulk_target(p.executor()),
+          C2d2.begin(),
+          C2d2.end(),
+          [&A, &B, numRows, numCols](std::vector<float> &x, unsigned index) 
+          {
+              //std::cout<<" size of x = "<<x.size()<<"\n" ; 
+            for (unsigned j = 0 ; j < numRows; j++ ){
+                unsigned col = j;
+              float reductionSum = 0;
+              for (unsigned k = 0 ; k < numRows; k++ ){
+                //C[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+                //unsigned row = index2Row(index);
+                //unsigned col = index2Col(index);
+                unsigned row = index;
+                reductionSum += A[row*numCols + k]*B[k*numCols+col];
+                //std::cout<<" "<<row<<","<<col;//<<", A="<<A[row*numCols + k]
+                  //<<", B="<<B[k*numCols+col]<<", x="<<reductionSum;
+              }
+              x[col] = reductionSum;
+            }
+          //std::cout<<"\n";
+          //std::cout<<"\t C["<<index2Row(index)<<"]["<<index2Col(index)<<"]="<<x ; 
+          });
+      auto stop = high_resolution_clock::now(); 
+      auto duration = duration_cast<microseconds>(stop - start); 
+      double microTime =(double) duration.count()/1000000;
+      executor4TimeSum += microTime;
+      std::cout<<std::fixed;
+      std::cout << "\n Time taken by Executor4 function: "
+        << microTime << " seconds \n"; 
+    }
+    {
+      std::fill(C1.begin(), C1.end(), 0);
       auto start = high_resolution_clock::now(); 
 
       mi::for_each(
           naive_executor_bulk_target(p.executor()),
-          C.begin(),
-          C.end(),
+          C1.begin(),
+          C1.end(),
           [&A, &B, numRows, numCols](float& x, unsigned index) 
           {
           for (unsigned k = 0 ; k < numRows; k++ ){
-          //C[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
-          unsigned row = index2Row(index);
-          unsigned col = index2Col(index);
-          x+= A[row*numCols + k]*B[k*numCols+col];
-          //std::cout<<" "<<row<<","<<col<<", A="<<A[row*numCols + k]
-          //  <<", B="<<B[k*numCols+col]<<", x="<<x;
+            //C[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+            unsigned row = index2Row(index);
+            unsigned col = index2Col(index);
+            x+= A[row*numCols + k]*B[k*numCols+col];
+            //std::cout<<" "<<row<<","<<col<<", A="<<A[row*numCols + k]
+            //  <<", B="<<B[k*numCols+col]<<", x="<<x;
           }
           //std::cout<<"\n";
           //std::cout<<"\t C["<<index2Row(index)<<"]["<<index2Col(index)<<"]="<<x ; 
@@ -200,15 +287,15 @@ int main(int argc, char **argv) {
       executor1TimeSum += microTime;
       std::cout<<std::fixed;
       std::cout << "\n Time taken by Executor1 function: "
-        << microTime << " microseconds \n"; 
+        << microTime << " seconds \n"; 
     }
     {
-      std::fill(C.begin(), C.end(), 0);
+      std::fill(C2.begin(), C2.end(), 0);
       auto start = high_resolution_clock::now(); 
 
       mi::for_each(
-          inline_bulk_target(), C.begin(),
-          C.end(),
+          inline_bulk_target(), C2.begin(),
+          C2.end(),
           [&A, &B, numRows, numCols](float& x, unsigned index) 
           {
           for (unsigned k = 0 ; k < numRows; k++ ){
@@ -228,24 +315,24 @@ int main(int argc, char **argv) {
       executor2TimeSum += microTime;
       std::cout<<std::fixed;
       std::cout << "\n Time taken by Executor2 function: "
-        << microTime << " microseconds \n"; 
+        << microTime << " seconds \n"; 
     }
 
     {
-    auto baseStart = high_resolution_clock::now(); 
-    for (unsigned i = 0 ; i < numRows; i++ ){
-      for (unsigned j = 0 ; j < numRows; j++ ){
-        for (unsigned k = 0 ; k < numRows; k++ ){
-          referenceC[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+      auto baseStart = high_resolution_clock::now(); 
+      for (unsigned i = 0 ; i < numRows; i++ ){
+        for (unsigned j = 0 ; j < numRows; j++ ){
+          for (unsigned k = 0 ; k < numRows; k++ ){
+            referenceC[i*numCols+j] +=  A[i*numCols+k]* B[k*numCols+j];
+          }
         }
       }
-    }
-    auto baseStop = high_resolution_clock::now(); 
-    auto baseDuration = duration_cast<microseconds>(baseStop - baseStart); 
-    auto microTime =(double) baseDuration.count()/1000000;
-    std::cout << "Time taken by Baseline function: "
-      << microTime<< " microseconds \n"; 
-    baseTimeSum += microTime;
+      auto baseStop = high_resolution_clock::now(); 
+      auto baseDuration = duration_cast<microseconds>(baseStop - baseStart); 
+      auto microTime =(double) baseDuration.count()/1000000;
+      std::cout << "Time taken by Baseline function: "
+        << microTime<< " seconds \n"; 
+      baseTimeSum += microTime;
     }
 
     p.stop();
@@ -253,23 +340,29 @@ int main(int argc, char **argv) {
     for (unsigned i = 0 ; i < numRows; i++ ){
       mismatch = false;
       for (unsigned j = 0 ; j < numRows; j++ ){
-        if (fabs(referenceC[i*numCols+j]- C[i*numCols+j]) > 0.001 ){
-          std::cout<<"\n Difference :"<<i<<","<<j<<"="<<referenceC[i*numCols+j]<<" but C="
-            << C[i*numCols+j];
+        if (fabs(referenceC[i*numCols+j]- C1[i*numCols+j]) > 0.001 ||
+          fabs(referenceC[i*numCols+j]- C2[i*numCols+j]) > 0.001 || 
+          fabs(referenceC[i*numCols+j]- C2d[i][j]) > 0.001 ||
+          fabs(referenceC[i*numCols+j]- C2d2[i][j]) > 0.001
+          ){
+          std::cout<<"\n Difference :"<<i<<","<<j<<"="<<referenceC[i*numCols+j]<<" but C1="
+            << C1[i*numCols+j];
           mismatch = true; break;
         }
       }
       if (mismatch) break;
     }
   }
-    auto E1microTime =(double) executor1TimeSum / 10;
-    auto E2microTime =(double) executor2TimeSum / 10;
-    auto BmicroTime =(double) baseTimeSum / 10;
+    auto E1microTime =(double) executor1TimeSum / maxNumExps;
+    auto E2microTime =(double) executor2TimeSum / maxNumExps;
+    auto BmicroTime =(double) baseTimeSum / maxNumExps;
+    auto E3microTime =(double) executor3TimeSum / maxNumExps;
+    auto E4microTime =(double) executor4TimeSum / maxNumExps;
     std::ofstream csvFile; 
     csvFile.open("executorRuntime.csv", std::ios::out|std::ios::app);
-    csvFile << "Experiment, Matrix Dimensions, Implementation1, Implementation2, Baseline ";
+    //csvFile << "Experiment, Matrix Dimensions, Implementation1, Implementation2, Baseline ";
     csvFile<<std::fixed;
-    csvFile<<"\npushmi,"<<MAXDIM<<","<< E1microTime<<","<< E2microTime<<","<<BmicroTime;
+    csvFile<<"\npushmi,"<<MAXDIM<<","<< E1microTime<<","<< E2microTime<<","<< E3microTime<<","<<E4microTime<<","<<BmicroTime;
     csvFile.close();
 
   //for (unsigned i = 0 ; i < numRows; i++ ){

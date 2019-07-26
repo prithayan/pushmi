@@ -32,8 +32,9 @@ auto inline_bulk_target() {
             auto out) {
     try {
       auto acc = init(input);
-      for (decltype(sb) idx{sb}; idx != se; ++idx) {
-        func(acc, idx);
+      unsigned index = 0 ; 
+      for (decltype(sb) idx{sb}; idx != se; ++idx, ++index) {
+        func(acc, idx, index);
       }
       auto result = selector(std::move(acc));
       mi::set_value(out, std::move(result));
@@ -46,9 +47,13 @@ auto inline_bulk_target() {
 
 int main() {
   std::vector<int> vec(10);
+  std::vector<int> input(10);
+  for (unsigned i = 0 ; i < 10 ; i++)
+    input[i] = 42;
 
   mi::for_each(
-      inline_bulk_target(), vec.begin(), vec.end(), [](int& x) { x = 42; });
+      inline_bulk_target(), vec.begin(), vec.end(), [=](int& x, unsigned index) 
+      { std::cout<< " \n index:"<<input[index]; x = input[index]; });
 
   assert(
       std::count(vec.begin(), vec.end(), 42) == static_cast<int>(vec.size()));

@@ -11,6 +11,8 @@ option(PUSHMI_USE_CONCEPTS_EMULATION "Use C++14 Concepts Emulation" OFF)
 option(PUSHMI_USE_CPP_2A "Use C++2a with concepts emulation" ON)
 option(PUSHMI_USE_CPP_17 "Use C++17 with concepts emulation" OFF)
 option(PUSHMI_ONE_TEST_BINARY "Compile all the tests into one binary" OFF)
+set(CMAKE_CXX_FLAGS "-fopenmp -O3")
+set(CMAKE_C_FLAGS "-fopenmp -O3")
 
 FIND_PACKAGE (Threads REQUIRED)
 
@@ -45,9 +47,9 @@ target_compile_options(pushmi INTERFACE
 elseif (PUSHMI_USE_CPP_2A)
 message("Using c++2a!")
 target_compile_options(pushmi INTERFACE
-    $<$<CXX_COMPILER_ID:GNU>:-std=c++2a>
+    $<$<CXX_COMPILER_ID:GNU>:-std=c++2a -fopenmp -O3>
     $<$<CXX_COMPILER_ID:AppleClang>:-std=c++2a>
-    $<$<CXX_COMPILER_ID:Clang>:-std=c++2a>
+    $<$<CXX_COMPILER_ID:Clang>:-std=c++2a -fopenmp>
     )
 else()
 message("Using c++14!")
